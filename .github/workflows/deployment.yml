@@ -32,6 +32,9 @@ jobs:
           find src -name "*.js" -print0 |
             xargs -0 -n1 node --check
 
+      - name: Run unit tests
+        run: bun run test --coverage
+
       - name: Build project
         run: bun run build
 
