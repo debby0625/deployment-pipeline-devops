@@ -1,0 +1,147 @@
+name: Multi-Stage Deployment Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and Validate
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate JavaScript syntax
+        run: |
+          find src -name "*.js" -print0 |
+            xargs -0 -n1 node --check
+
+      - name: Build project
+        run: bun run build
+
+      - name: Generate dynamic version
+        id: version
+        run: |
+          VERSION="1.0.${GITHUB_RUN_NUMBER}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Package build artifact
+        run: |
+          zip -r build.zip dist action.yml LICENSE
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-build
+          path: build.zip
+          if-no-files-found: error
+
+  deploy-dev:
+    name: Deploy to Development
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-build
+
+      - name: Create Dev Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ vars.BUILD_TAG }}
+          RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          PREFIX="${BUILD_TAG%%-v*}"
+          TAG="${PREFIX}-v${VERSION}"
+
+          gh release create "$TAG" build.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Development Release $VERSION" \
+            --notes "$RELEASE_NOTE"
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs:
+      - build
+      - deploy-dev
+    runs-on: ubuntu-latest
+    environment: staging
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-build
+
+      - name: Create Staging Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ vars.BUILD_TAG }}
+          RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          PREFIX="${BUILD_TAG%%-v*}"
+          TAG="${PREFIX}-v${VERSION}"
+
+          gh release create "$TAG" build.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Staging Release $VERSION" \
+            --notes "$RELEASE_NOTE"
+
+  deploy-production:
+    name: Deploy to Production
+    needs:
+      - build
+      - deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-build
+
+      - name: Create Production Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ vars.BUILD_TAG }}
+          RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          PREFIX="${BUILD_TAG%%-v*}"
+          TAG="${PREFIX}-v${VERSION}"
+
+          gh release create "$TAG" build.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Production Release $VERSION" \
+            --notes "$RELEASE_NOTE"
