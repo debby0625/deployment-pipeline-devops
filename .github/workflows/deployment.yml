@@ -124,13 +124,27 @@ jobs:
 
     permissions:
       contents: read
-      models: read
 
     steps:
       - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 20
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+
+      - name: Install GitHub Copilot CLI
+        run: npm install --global @github/copilot
+
+      - name: Verify Copilot credential
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+        run: |
+          if [ -z "$COPILOT_GITHUB_TOKEN" ]; then
+            echo "::error::Repository secret COPILOT_PAT is required for the AI review job."
+            exit 1
+          fi
 
       - name: Collect recent commit summaries
         run: |
@@ -161,12 +175,13 @@ jobs:
 
       - name: Generate AI release notes
         id: inference
-        uses: actions/ai-inference@v2.1.1
+        uses: actions/ai-inference@v3
         with:
-          model: openai/gpt-4o
+          provider: copilot
+          model: gpt-4.1
           prompt-file: ai-release-notes.prompt.yml
-          max-completion-tokens: 800
-          token: ${{ github.token }}
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
 
       - name: Save AI release notes
         run: |
