@@ -130,7 +130,8 @@ jobs:
       - name: Checkout repository history
         uses: actions/checkout@v4
         with:
-          fetch-depth: 20
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -138,11 +139,36 @@ jobs:
       - name: Install GitHub Copilot CLI
         run: npm install --global @github/copilot
 
-      - name: Collect recent commit summaries
+      - name: Collect commits since previous production
+        shell: bash
         run: |
-          git log -n 20 --format='- %h %s' > commit-summary.txt
-          test -s commit-summary.txt
+          set -euo pipefail
 
+          TARGET_COMMIT="$(git rev-parse HEAD)"
+          BASE_TAG="$(git describe --tags --first-parent \
+            --match 'prod-*' --abbrev=0 HEAD^ 2>/dev/null || true)"
+
+          echo "Target commit: $TARGET_COMMIT"
+
+          if [ -n "$BASE_TAG" ]; then
+            echo "Previous production tag: $BASE_TAG"
+            echo "Commit range: ${BASE_TAG}..${TARGET_COMMIT}"
+            git log "${BASE_TAG}..${TARGET_COMMIT}" \
+              --format='- %h %s' > commit-summary.txt
+          else
+            echo "Previous production tag: none"
+            echo "First production release: summarize all commits"
+            git log "$TARGET_COMMIT" \
+              --format='- %h %s' > commit-summary.txt
+          fi
+
+          if [ ! -s commit-summary.txt ]; then
+            echo "- No new commits in this release range." \
+              > commit-summary.txt
+          fi
+
+          echo "Commits supplied to the AI:"
+          cat commit-summary.txt
       - name: Prepare guarded AI prompt
         run: |
           cat > ai-release-notes.prompt.txt <<'EOF'
