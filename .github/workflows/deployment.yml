@@ -124,6 +124,7 @@ jobs:
 
     permissions:
       contents: read
+      copilot-requests: write
 
     steps:
       - name: Checkout repository history
@@ -136,15 +137,6 @@ jobs:
 
       - name: Install GitHub Copilot CLI
         run: npm install --global @github/copilot
-
-      - name: Verify Copilot credential
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
-        run: |
-          if [ -z "$COPILOT_GITHUB_TOKEN" ]; then
-            echo "::error::Repository secret COPILOT_PAT is required for the AI review job."
-            exit 1
-          fi
 
       - name: Collect recent commit summaries
         run: |
@@ -181,7 +173,7 @@ jobs:
           model: gpt-4.1
           prompt-file: ai-release-notes.prompt.yml
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Save AI release notes
         run: |
