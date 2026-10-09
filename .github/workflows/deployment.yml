@@ -121,10 +121,12 @@ jobs:
     name: AI Release Notes Review
     needs: deploy-staging
     runs-on: ubuntu-latest
+    environment:
+      name: staging
+      deployment: false
 
     permissions:
       contents: read
-      copilot-requests: write
 
     steps:
       - name: Checkout repository history
@@ -186,9 +188,10 @@ jobs:
 
       - name: Generate AI release notes
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_PAT }}
           COPILOT_MODEL: gpt-4.1
         run: |
+          test -n "$COPILOT_GITHUB_TOKEN"
           copilot -p "$(cat ai-release-notes.prompt.txt)" -s --no-ask-user > ai-release-notes.md
           test -s ai-release-notes.md
           cat ai-release-notes.md
