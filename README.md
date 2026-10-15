@@ -1,3 +1,75 @@
+# Assignment 5 — Automated Testing in GitHub Workflow
+
+Repository: https://github.com/debby0625/deployment-pipeline-devops
+
+[![Build](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/debby0625/deployment-pipeline-devops/ci-status/build.json)](https://github.com/debby0625/deployment-pipeline-devops/actions/workflows/deployment.yml)
+[![Test](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/debby0625/deployment-pipeline-devops/ci-status/test.json)](https://github.com/debby0625/deployment-pipeline-devops/actions/workflows/deployment.yml)
+[![Release](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/debby0625/deployment-pipeline-devops/ci-status/release.json)](https://github.com/debby0625/deployment-pipeline-devops/releases)
+
+Badges report the actual Build, combined Unit/Integration, and combined deployment results of the latest completed main-branch pipeline. They can show success, failure, or skipped. Shields may cache for five minutes. [Exact source run, commit and results](https://github.com/debby0625/deployment-pipeline-devops/blob/ci-status/latest.json).
+
+```mermaid
+flowchart LR
+  B[Build + immutable artifact] --> U[Unit matrix + coverage gate]
+  U --> I[Integration: staging + prod]
+  I --> D[Dev release]
+  D --> S[Staging release]
+  S --> AI[AI review material]
+  AI --> P[Production: required human reviewer]
+  U --> N[Result comment + failure Issue]
+  I --> N
+```
+
+## Run the real tests
+
+Use Node.js 22 or 24 and Bun 1.4.2 (dependency installer).
+
+```sh
+bun install --frozen-lockfile
+bun run build
+bun run test:unit
+TEST_ENV=staging bun run test:integration
+TEST_ENV=prod bun run test:integration
+```
+
+- Unit: 60 assertions/test cases for template rendering, privacy, event URLs and fallback branches.
+- Integration: execute the actual dist/index.js bundle against a local HTTP GitHub API fixture, checking Markdown/HTML, event filtering, privacy, dry-run filesystem preservation and rejected invalid inputs.
+- TEST_ENV is consumed: staging uses EVENT_LIMIT=2; prod uses EVENT_LIMIT=1; unsupported environments fail.
+- Coverage scope is explicitly **src/utils/templateEngine.js** (the rendering component), not the whole repository. Thresholds: lines/statements 95%, functions 100%, branches 90%. Full application behavior is checked separately by the integration suite.
+- Each matrix job uploads HTML/LCOV/JSON coverage and JUnit XML even on test failure. Download the unit-reports-* and integration-reports-* artifacts in Actions.
+- Build produces one archive and SHA256 manifest. Every test and release restores and verifies that artifact; releases target its exact commit. No rebuild occurs between testing and deployment.
+
+## Demonstrate failure gates
+
+Actions → Assignment 5 → Run workflow → choose a scenario:
+
+| Scenario | Deliberate runner-only change | Expected evidence |
+|---|---|---|
+| success | None | All tests pass; Dev/Staging release; Production waits for reviewer |
+| unit-failure | Remove private-name hiding from source in disposable test runners | Privacy assertions fail; Integration and every release skipped; failure Issue created |
+| integration-failure | Corrupt privacy text in the unpacked bundle after integrity verification | Unit passes; built-bundle integration assertions fail; every release skipped |
+| coverage-failure | Omit edge-case tests, retain all coverage thresholds | Remaining assertions pass; coverage threshold fails; every release skipped |
+
+These controls never alter committed application code and never bypass a gate. Only main can publish releases. Production still requires a person to review the test results and AI notes in GitHub before approving deployment.
+
+## Seven O-level features
+
+1. Downloadable coverage reports.
+2. Separate Build / Test / Release status badges derived from actual job results.
+3. Ubuntu and Windows × Node 22 and 24 matrix (four unit jobs).
+4. Enforced coverage thresholds with an explicit failure demonstration.
+5. JUnit XML for unit and integration jobs.
+6. Actual test-result notifications as comments in the dedicated `[CI] Automated test results` issue, for both pass and fail.
+7. A separate `[CI failure]` issue automatically created for a failed run, with run URL, commit and stage outcomes.
+
+Only release/status jobs receive contents:write; only notification jobs receive issues:write. Test jobs use contents:read and fake fixture credentials. Assignment 4's AI release-note review and Production required reviewer remain in the pipeline.
+
+## Verification record
+
+Implementation and local verification are separate from GitHub verification. Use actual Actions run URLs, artifacts, notification comments, failure issues and full-page screenshots as submission evidence. A green badge alone is insufficient. The final report must include at least ten landscape slides and the repository URL.
+
+---
+
 <h1 align="center" id="title">Activity Log</h1>
 
 ![activity log](https://socialify.git.ci/TheDanniCraft/activity-log/image?forks=1&issues=1&language=1&logo=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F66677362&name=1&owner=1&pattern=Solid&pulls=1&stargazers=1&theme=Auto)

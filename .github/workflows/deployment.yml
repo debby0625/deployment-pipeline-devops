@@ -1,126 +1,235 @@
-name: Multi-Stage Deployment Pipeline
+name: Assignment 5 — Build Test Release
+run-name: "A5 ${{ inputs.scenario || 'success' }} · ${{ github.ref_name }} · #${{ github.run_number }}"
 
 on:
   push:
-    branches:
-      - main
+    branches: [main, assignment5-automated-testing]
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: Verification scenario (negative controls never modify committed code)
+        type: choice
+        default: success
+        options: [success, unit-failure, integration-failure, coverage-failure]
 
 permissions:
   contents: read
 
+env:
+  SCENARIO: ${{ inputs.scenario || 'success' }}
+
 jobs:
   build:
-    name: Build and Validate
-    runs-on: ubuntu-latest
-
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-
+    name: Build artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Install locked dependencies
         run: bun install --frozen-lockfile
-
-      - name: Validate JavaScript syntax
-        run: |
-          find src -name "*.js" -print0 |
-            xargs -0 -n1 node --check
-
-      - name: Run unit tests
-        run: bun run test --coverage
-
-      - name: Build project
+      - name: Build the application (tests run in later jobs)
         run: bun run build
-
-      - name: Generate dynamic version
-        id: version
+      - name: Package and record commit / SHA256
         run: |
-          VERSION="1.0.${GITHUB_RUN_NUMBER}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Package build artifact
-        run: |
-          zip -r build.zip dist action.yml LICENSE
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+          tar -cf build.tar dist action.yml LICENSE
+          node ci.cjs manifest
+          cat build-manifest.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
         with:
           name: deployment-build
-          path: build.zip
+          path: |
+            build.tar
+            build-manifest.json
           if-no-files-found: error
+          retention-days: 30
+
+  test-unit:
+    name: Unit / ${{ matrix.os }} / Node ${{ matrix.node }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+        node: ['22', '24']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      TEST_ENV: staging
+      TEST_PHASE: unit-${{ matrix.os }}-node${{ matrix.node }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: deployment-build
+      - name: Restore and verify the Build artifact
+        run: node ci.cjs restore
+      - name: Prepare deliberate negative control when selected
+        run: node ci.cjs scenario unit
+      - name: Unit tests / coverage thresholds / JUnit
+        run: bun run test:unit
+      - name: Upload coverage and JUnit even when tests fail
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-reports-${{ matrix.os }}-node${{ matrix.node }}
+          path: |
+            coverage/
+            reports/
+          if-no-files-found: error
+          retention-days: 30
+
+  test-integration:
+    name: Integration / TEST_ENV=${{ matrix.test-env }}
+    needs: [build, test-unit]
+    strategy:
+      fail-fast: false
+      matrix:
+        test-env: [staging, prod]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TEST_ENV: ${{ matrix.test-env }}
+      TEST_PHASE: integration-${{ matrix.test-env }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: deployment-build
+      - name: Restore and verify the same Build artifact
+        run: node ci.cjs restore
+      - name: Prepare deliberate negative control when selected
+        run: node ci.cjs scenario integration
+      - name: Execute built Action against local HTTP fixture
+        run: bun run test:integration
+      - name: Upload integration JUnit even when tests fail
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-reports-${{ matrix.test-env }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 30
+
+  notify-tests:
+    name: Notify test results / create failure Issue
+    needs: [build, test-unit, test-integration]
+    if: always() && !cancelled()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: assignment5-test-notifications
+      cancel-in-progress: false
+    env:
+      JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/github-script@v8
+        with:
+          script: await require('./ci.cjs').notify({ github, context, core });
 
   deploy-dev:
-    name: Deploy to Development
-    needs: build
-    runs-on: ubuntu-latest
+    name: Release to Dev
+    needs: [build, test-unit, test-integration]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
     environment: dev
-
+    timeout-minutes: 10
     permissions:
       contents: write
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
-
-      - name: Create Dev Release
+      - name: Verify the tested artifact before releasing
+        run: node ci.cjs restore
+      - name: Release exactly the tested commit and artifact
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ vars.BUILD_TAG }}
           RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
-          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          test -n "$BUILD_TAG"
           PREFIX="${BUILD_TAG%%-v*}"
-          TAG="${PREFIX}-v${VERSION}"
-
-          gh release create "$TAG" build.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Development Release $VERSION" \
-            --notes "$RELEASE_NOTE"
+          TAG="${PREFIX}-a5-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n\nCommit: %s\nRun: %s/%s/actions/runs/%s\n' \
+            "$RELEASE_NOTE" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > release-notes.txt
+          cat build-manifest.json >> release-notes.txt
+          gh release create "$TAG" build.tar build-manifest.json \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Assignment 5 dev — run #$GITHUB_RUN_NUMBER" \
+            --notes-file release-notes.txt
+          printf 'Released %s after both test phases passed.\n' "$TAG" >> "$GITHUB_STEP_SUMMARY"
 
   deploy-staging:
-    name: Deploy to Staging
-    needs:
-      - build
-      - deploy-dev
-    runs-on: ubuntu-latest
+    name: Release to Staging
+    needs: [build, test-unit, test-integration, deploy-dev]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
     environment: staging
-
+    timeout-minutes: 10
     permissions:
       contents: write
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
-
-      - name: Create Staging Release
+      - name: Verify the tested artifact before releasing
+        run: node ci.cjs restore
+      - name: Release exactly the tested commit and artifact
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ vars.BUILD_TAG }}
           RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
-          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          test -n "$BUILD_TAG"
           PREFIX="${BUILD_TAG%%-v*}"
-          TAG="${PREFIX}-v${VERSION}"
-
-          gh release create "$TAG" build.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Staging Release $VERSION" \
-            --notes "$RELEASE_NOTE"
+          TAG="${PREFIX}-a5-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n\nCommit: %s\nRun: %s/%s/actions/runs/%s\n' \
+            "$RELEASE_NOTE" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > release-notes.txt
+          cat build-manifest.json >> release-notes.txt
+          gh release create "$TAG" build.tar build-manifest.json \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Assignment 5 staging — run #$GITHUB_RUN_NUMBER" \
+            --notes-file release-notes.txt
+          printf 'Released %s after both test phases passed.\n' "$TAG" >> "$GITHUB_STEP_SUMMARY"
 
   ai-release-notes:
     name: AI Release Notes Review
     needs: deploy-staging
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: staging
       deployment: false
@@ -130,13 +239,13 @@ jobs:
 
     steps:
       - name: Checkout repository history
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
 
       - name: Install GitHub Copilot CLI
         run: npm install --global @github/copilot
@@ -197,41 +306,63 @@ jobs:
           cat ai-release-notes.md
 
       - name: Upload AI release notes artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ai-release-notes
           path: ai-release-notes.md
           if-no-files-found: error
 
   deploy-production:
-    name: Deploy to Production
-    needs:
-      - build
-      - deploy-staging
-      - ai-release-notes
-    runs-on: ubuntu-latest
+    name: Release to Production / manual approval
+    needs: [build, test-unit, test-integration, deploy-staging, ai-release-notes, notify-tests]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
     environment: production
-
+    timeout-minutes: 10
     permissions:
       contents: write
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
-
-      - name: Create Production Release
+      - name: Verify the tested artifact before releasing
+        run: node ci.cjs restore
+      - name: Release exactly the tested commit and artifact
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_TAG: ${{ vars.BUILD_TAG }}
           RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
-          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          test -n "$BUILD_TAG"
           PREFIX="${BUILD_TAG%%-v*}"
-          TAG="${PREFIX}-v${VERSION}"
+          TAG="${PREFIX}-a5-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n\nCommit: %s\nRun: %s/%s/actions/runs/%s\n' \
+            "$RELEASE_NOTE" "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > release-notes.txt
+          cat build-manifest.json >> release-notes.txt
+          gh release create "$TAG" build.tar build-manifest.json \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Assignment 5 production — run #$GITHUB_RUN_NUMBER" \
+            --notes-file release-notes.txt
+          printf 'Released %s after both test phases passed.\n' "$TAG" >> "$GITHUB_STEP_SUMMARY"
 
-          gh release create "$TAG" build.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Production Release $VERSION" \
-            --notes "$RELEASE_NOTE"
+  publish-status:
+    name: Publish Build / Test / Release badges
+    needs: [build, test-unit, test-integration, notify-tests, deploy-dev, deploy-staging, ai-release-notes, deploy-production]
+    if: always() && !cancelled() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: assignment5-status-badges
+      cancel-in-progress: false
+    env:
+      JOB_RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/github-script@v8
+        with:
+          script: await require('./ci.cjs').badges({ github, context, core });

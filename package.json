@@ -1,21 +1,25 @@
 {
-	"type": "module",
-	"dependencies": {
-		"@actions/core": "^3.0.1",
-		"@actions/github": "^9.1.1",
-		"@octokit/plugin-throttling": "^11.0.3",
-		"axios": "^1.20.0",
-		"commitlint-config-gitmoji": "^2.3.1",
-		"yaml": "^2.9.0"
-	},
-	"scripts": {
-		"test": "bun test",
-		"watch": "ncc build src/index.js --watch --license licenses.txt",
-		"build": "bun install && bunx ncc build src/index.js --license licenses.txt",
-		"lint:commit": "commitlint --last --verbose"
-	},
-	"devDependencies": {
-		"@commitlint/cli": "^21.2.3",
-		"@vercel/ncc": "^0.44.1"
-	}
+  "type": "module",
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
+    "@octokit/plugin-throttling": "^11.0.3",
+    "axios": "^1.20.0",
+    "commitlint-config-gitmoji": "^2.3.1",
+    "yaml": "^2.9.0"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "watch": "ncc build src/index.js --watch --license licenses.txt",
+    "build": "ncc build src/index.js --license licenses.txt",
+    "lint:commit": "commitlint --last --verbose",
+    "test:unit": "vitest run tests/templateEngine.test.js tests/templateEngine.edges.test.js --coverage",
+    "test:integration": "vitest run tests/action.integration.test.js"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@vercel/ncc": "^0.44.1",
+    "@vitest/coverage-v8": "4",
+    "vitest": "4"
+  }
 }
