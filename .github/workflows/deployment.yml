@@ -40,7 +40,7 @@ jobs:
           tar -cf build.tar dist action.yml LICENSE
           node ci.cjs manifest
           cat build-manifest.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: deployment-build
           path: |
@@ -74,7 +74,7 @@ jobs:
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
       - name: Restore and verify the Build artifact
@@ -85,7 +85,7 @@ jobs:
         run: bun run test:unit
       - name: Upload coverage and JUnit even when tests fail
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unit-reports-${{ matrix.os }}-node${{ matrix.node }}
           path: |
@@ -115,7 +115,7 @@ jobs:
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
       - name: Restore and verify the same Build artifact
@@ -126,7 +126,7 @@ jobs:
         run: bun run test:integration
       - name: Upload integration JUnit even when tests fail
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: integration-reports-${{ matrix.test-env }}
           path: reports/
@@ -166,7 +166,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
       - name: Verify the tested artifact before releasing
@@ -203,7 +203,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
       - name: Verify the tested artifact before releasing
@@ -306,7 +306,7 @@ jobs:
           cat ai-release-notes.md
 
       - name: Upload AI release notes artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ai-release-notes
           path: ai-release-notes.md
@@ -326,7 +326,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: deployment-build
       - name: Verify the tested artifact before releasing
