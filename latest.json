@@ -1,0 +1,11 @@
+{
+  "runNumber": 12,
+  "runUrl": "https://github.com/debby0625/deployment-pipeline-devops/actions/runs/38701204136",
+  "commit": "358d6195e5e591defe1d1e78ac10036b0c6507f8",
+  "scenario": "unit-failure",
+  "states": {
+    "Build": "success",
+    "Test": "failure",
+    "Release": "skipped"
+  }
+}
