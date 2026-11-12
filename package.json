@@ -14,12 +14,17 @@
     "build": "ncc build src/index.js --license licenses.txt",
     "lint:commit": "commitlint --last --verbose",
     "test:unit": "vitest run tests/templateEngine.test.js tests/templateEngine.edges.test.js --coverage",
-    "test:integration": "vitest run tests/action.integration.test.js"
+    "test:integration": "vitest run tests/action.integration.test.js",
+    "lint": "eslint . --max-warnings 0",
+    "check:workflows": "node scripts/check-workflows.js"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",
+    "@eslint/js": "9",
     "@vercel/ncc": "^0.44.1",
     "@vitest/coverage-v8": "4",
+    "eslint": "9",
+    "globals": "16",
     "vitest": "4"
   }
 }
