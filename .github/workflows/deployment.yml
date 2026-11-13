@@ -66,7 +66,7 @@ jobs:
           tar -cf build.tar dist action.yml LICENSE
           node ci.cjs manifest
           cat build-manifest.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deployment-build
           path: |
@@ -115,7 +115,7 @@ jobs:
         run: bun run test:unit
       - name: Upload coverage and JUnit even when tests fail
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unit-reports-${{ matrix.os }}-node${{ matrix.node }}
           path: |
@@ -160,7 +160,7 @@ jobs:
         run: bun run test:integration
       - name: Upload integration JUnit even when tests fail
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-reports-${{ matrix.test-env }}
           path: reports/
@@ -346,7 +346,7 @@ jobs:
           cat ai-release-notes.md
 
       - name: Upload AI release notes artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ai-release-notes
           path: ai-release-notes.md
