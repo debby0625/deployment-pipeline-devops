@@ -1,11 +1,11 @@
 {
-  "runNumber": 15,
-  "runUrl": "https://github.com/debby0625/deployment-pipeline-devops/actions/runs/38701682958",
-  "commit": "358d6195e5e591defe1d1e78ac10036b0c6507f8",
+  "runNumber": 27,
+  "runUrl": "https://github.com/debby0625/deployment-pipeline-devops/actions/runs/43360466204",
+  "commit": "4c0a75cc23e7a9e814f4243791962b9fe160d6fe",
   "scenario": "success",
   "states": {
     "Build": "success",
     "Test": "success",
-    "Release": "success"
+    "Release": "failure"
   }
 }
