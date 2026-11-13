@@ -4,6 +4,8 @@ run-name: "A5 ${{ inputs.scenario || 'success' }} · ${{ github.ref_name }} · #
 on:
   push:
     branches: [main, assignment5-automated-testing]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       scenario:
@@ -12,23 +14,47 @@ on:
         default: success
         options: [success, unit-failure, integration-failure, coverage-failure]
 
-permissions:
-  contents: read
+permissions: {}
 
 env:
   SCENARIO: ${{ inputs.scenario || 'success' }}
 
 jobs:
-  build:
-    name: Build artifact
+  quality:
+    name: ESLint / workflow security
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.2'
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run check:workflows
+
+  build:
+    name: Build artifact
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: '1.4.2'
       - name: Install locked dependencies
@@ -40,7 +66,7 @@ jobs:
           tar -cf build.tar dist action.yml LICENSE
           node ci.cjs manifest
           cat build-manifest.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: deployment-build
           path: |
@@ -59,6 +85,8 @@ jobs:
         node: ['22', '24']
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    permissions:
+      contents: read
     env:
       TEST_ENV: staging
       TEST_PHASE: unit-${{ matrix.os }}-node${{ matrix.node }}
@@ -66,15 +94,17 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ matrix.node }}
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: deployment-build
       - name: Restore and verify the Build artifact
@@ -85,7 +115,7 @@ jobs:
         run: bun run test:unit
       - name: Upload coverage and JUnit even when tests fail
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: unit-reports-${{ matrix.os }}-node${{ matrix.node }}
           path: |
@@ -103,19 +133,23 @@ jobs:
         test-env: [staging, prod]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     env:
       TEST_ENV: ${{ matrix.test-env }}
       TEST_PHASE: integration-${{ matrix.test-env }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: '1.4.2'
       - run: bun install --frozen-lockfile
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: deployment-build
       - name: Restore and verify the same Build artifact
@@ -126,7 +160,7 @@ jobs:
         run: bun run test:integration
       - name: Upload integration JUnit even when tests fail
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: integration-reports-${{ matrix.test-env }}
           path: reports/
@@ -136,7 +170,7 @@ jobs:
   notify-tests:
     name: Notify test results / create failure Issue
     needs: [build, test-unit, test-integration]
-    if: always() && !cancelled()
+    if: always() && !cancelled() && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -147,8 +181,10 @@ jobs:
     env:
       JOB_RESULTS: ${{ toJSON(needs) }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/github-script@v8
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: await require('./ci.cjs').notify({ github, context, core });
 
@@ -162,11 +198,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: deployment-build
       - name: Verify the tested artifact before releasing
@@ -199,11 +237,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: deployment-build
       - name: Verify the tested artifact before releasing
@@ -239,13 +279,13 @@ jobs:
 
     steps:
       - name: Checkout repository history
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
 
       - name: Install GitHub Copilot CLI
         run: npm install --global @github/copilot
@@ -306,7 +346,7 @@ jobs:
           cat ai-release-notes.md
 
       - name: Upload AI release notes artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ai-release-notes
           path: ai-release-notes.md
@@ -322,11 +362,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: deployment-build
       - name: Verify the tested artifact before releasing
@@ -362,7 +404,9 @@ jobs:
     env:
       JOB_RESULTS: ${{ toJSON(needs) }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/github-script@v8
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: await require('./ci.cjs').badges({ github, context, core });

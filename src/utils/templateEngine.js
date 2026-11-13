@@ -51,7 +51,7 @@ function applyTemplate(template, data) {
     return normalizeRenderedTemplate(rendered);
 }
 
-function getEventVerb(type, payload = {}) {
+function getEventVerb(type) {
     const verbByType = {
         PushEvent: 'in',
         CreateEvent: 'in',
@@ -390,7 +390,7 @@ function extractEventData(event, eventEmojiMap, hideDetailsOnPrivateRepos = fals
     const rawAction = getEventAction(type, payload);
     const action = toSentenceAction(getDisplayAction(type, rawAction));
     const emoji = getEventEmoji(type, rawAction, eventEmojiMap, payload);
-    const verb = getEventVerb(type, payload);
+    const verb = getEventVerb(type);
     const subject = getEventSubject(type, payload);
 
     const repoName = isPrivate ? 'a private repository' : repo.name;
